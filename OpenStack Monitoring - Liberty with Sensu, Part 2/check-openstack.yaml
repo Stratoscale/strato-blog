@@ -1,0 +1,97 @@
+heat_template_version: 2013-05-23
+
+description: >
+  A HOT template that holds a VM instance with an attached
+  Cinder volume.  The instance then goes to a URL
+
+parameters:
+  key_name:
+    type: string
+    description: Name of an existing key pair to use for the instance
+    default: my-keypair
+  flavor:
+    type: string
+    description: Flavor for the instance to be created
+    default: m1.small
+  image:
+    type: string
+    description: Name or ID of the image to use for the instance.
+    default: my_image_name
+  network:
+    type: string
+    description: The network for the VM
+    default: my_network
+  vol_size:
+    type: number
+    description: The size of the Cinder volume
+    default: 1
+  url:
+    type: string
+    description: The URL of the object in Swift
+    default: "http://<MY_URL>"
+
+
+resources:
+  my_instance:
+    type: OS::Nova::Server
+    properties:
+      key_name: { get_param: key_name }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      networks: [{network: {get_param: network} }]
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/bash
+
+            function testExitStatus()
+              {
+                local exit_status=$?
+
+                if [ $exit_status -ne 0 ]; then
+                  echo "Exit status failed ($exit_status)! $1"
+                  $wc_notify --data-binary "{\"status\": \"FAILURE\", \"reason\": \"${1}\"}"
+                  exit $exit_status
+                fi
+              }
+            wget $url
+          params:
+            $url: { get_param: url }
+            wc_notify: { get_attr: ['wchandle', 'curl_cli'] }
+
+
+  ### Used to manage completion of software installation
+  waitcondition:
+    type: OS::Heat::WaitCondition
+    depends_on:
+        # depends_on used to ensure that the wait condition starts after openstack has created
+        # the server to remove the server time to launch overlapping with the
+        # server start time
+        - my_instance
+    properties:
+      # count is 1. This will succeed after one success notification. Count can be used to track the
+      # start of multiple machines if relevant with a single wait condition
+      count: 1
+      handle: {get_resource: wchandle}
+      timeout: 120
+
+  ### Used by user data script to signal installation completion status to the heat wait condition
+  wchandle:
+    type: OS::Heat::WaitConditionHandle
+
+  my_vol:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: vol_size }
+
+  vol_att:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      instance_uuid: { get_resource: my_instance }
+      volume_id: { get_resource: my_vol }
+      mountpoint: /dev/vdb
+outputs:
+  instance_networks:
+    description: The IP addresses of the deployed instance
+    value: { get_attr: [my_instance, networks] }
+
