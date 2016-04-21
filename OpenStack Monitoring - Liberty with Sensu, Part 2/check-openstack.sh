@@ -1,5 +1,3 @@
-Save the following bash script as check-openstack.sh:
-
 #!/bin/bash
 #
 # OpenStack Monitoring script for Sensu
