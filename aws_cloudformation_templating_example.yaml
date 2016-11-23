@@ -1,0 +1,29 @@
+EC2InstanceApp: 
+    Type: "AWS::EC2::Instance"
+    Properties: 
+      ImageId: 
+        Fn::FindInMap: 
+          - "RegionMap"
+          - Ref: "AWS::Region"
+          - "AMI"
+      InstanceType:
+        Fn::If:
+        - AppProd
+        - m3.xlarge
+        - Fn::If:
+          - AppDev
+          - m1.large
+          - Fn::If:
+            - AppStaging
+            - m3.large
+      KeyName: 
+        Ref: "KeyName"
+      SecurityGroups:
+      - Ref: AppSG
+      UserData:
+        Fn::Base64: !Sub |
+           #!/bin/bash -xe
+           yum update -y aws-cfn-bootstrap
+           /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource AppFrontEnd --configsets app_install --region ${AWS::Region}
+           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource AppFrontEnd --region ${AWS::Region}
+           
